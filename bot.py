@@ -1,5 +1,7 @@
 import requests
 import asyncio
+import schedule
+import time
 from telegram import Bot
 from config import TOKEN, CHANNEL_ID, API_KEY
 from logic import analyze_match, is_safe_bet
@@ -15,7 +17,7 @@ def get_matches():
     return requests.get(url).json()
 
 
-# 🧠 Собираем топ ставки
+# 🧠 собираем лучшие ставки
 def get_top_bets():
     matches = get_matches()
     all_bets = []
@@ -24,7 +26,6 @@ def get_top_bets():
         try:
             league = match['sport_title']
 
-            # фильтр топ-лиг
             if not any(top in league for top in TOP_LEAGUES):
                 continue
 
@@ -44,25 +45,25 @@ def get_top_bets():
                     all_bets.append(bet)
 
         except Exception as e:
-            print("Ошибка матча:", e)
+            print("Ошибка:", e)
             continue
 
-    # сортировка по value
     all_bets.sort(key=lambda x: x['value'], reverse=True)
 
     return all_bets[:3]
 
 
-# 📢 Отправка прогноза
+# 📢 отправка
 async def send_prediction():
+    print("Запуск прогноза...")
+
     bets = get_top_bets()
 
     if not bets:
-        print("Нет подходящих ставок")
+        print("Нет ставок")
         return
 
     text = "🔥 AI TOP PICKS\n\n"
-
     emojis = ["🥇", "🥈", "🥉"]
 
     for i, bet in enumerate(bets):
@@ -87,14 +88,26 @@ async def send_prediction():
 
     text += f"""
 
-📊 Общая статистика:
+📊 Статистика:
 ROI: {round(roi, 2)}%
 """
 
-    # 🚀 отправка в Telegram
     await bot.send_message(chat_id=CHANNEL_ID, text=text)
 
+    print("Отправлено!")
 
-# ▶️ Запуск
+
+# ⏰ планировщик
+def run_scheduler():
+    schedule.every().day.at("12:00").do(lambda: asyncio.run(send_prediction()))
+
+    print("Бот запущен и ждёт расписание...")
+
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+
+# ▶️ старт
 if __name__ == "__main__":
-    asyncio.run(send_prediction())
+    run_scheduler()
