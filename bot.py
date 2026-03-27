@@ -9,7 +9,7 @@ import random
 from telegram import Bot
 
 # =========================
-# 🔥 Flask (чтобы Render работал бесплатно)
+# 🔥 Flask для Render
 # =========================
 from flask import Flask
 import threading
@@ -34,29 +34,35 @@ API_KEY = os.getenv("API_KEY")
 
 bot = Bot(token=TOKEN)
 
-LAST_FILE = "last_post.txt"
+POSTS_FILE = "posts_today.txt"
 
 # =========================
-# Проверка: отправляли сегодня?
+# СЧЁТЧИК ПРОГНОЗОВ
 # =========================
-def already_posted_today():
-    if not os.path.exists(LAST_FILE):
-        return False
+def get_today_count():
+    if not os.path.exists(POSTS_FILE):
+        return 0
 
-    with open(LAST_FILE, "r") as f:
-        last_date = f.read().strip()
+    with open(POSTS_FILE, "r") as f:
+        data = f.read().strip().split(",")
 
     today = datetime.now().strftime("%Y-%m-%d")
-    return last_date == today
 
-def mark_posted():
+    if len(data) != 2 or data[0] != today:
+        return 0
+
+    return int(data[1])
+
+
+def increment_post_count():
     today = datetime.now().strftime("%Y-%m-%d")
+    count = get_today_count() + 1
 
-    with open(LAST_FILE, "w") as f:
-        f.write(today)
+    with open(POSTS_FILE, "w") as f:
+        f.write(f"{today},{count}")
 
 # =========================
-# Получение матчей
+# ПОЛУЧЕНИЕ МАТЧЕЙ
 # =========================
 def get_matches():
     url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={API_KEY}&regions=eu&markets=h2h,totals"
@@ -68,7 +74,7 @@ def get_matches():
     return []
 
 # =========================
-# Время (фильтр)
+# ФИЛЬТР ВРЕМЕНИ
 # =========================
 def is_good_time(match_time_str):
     match_time = datetime.fromisoformat(match_time_str.replace("Z", "+00:00"))
@@ -78,7 +84,7 @@ def is_good_time(match_time_str):
     return timedelta(minutes=0) <= diff <= timedelta(hours=4)
 
 # =========================
-# Сортировка матчей
+# СОРТИРОВКА
 # =========================
 def sort_by_time(matches):
     return sorted(
@@ -87,7 +93,7 @@ def sort_by_time(matches):
     )
 
 # =========================
-# Прогноз (разные ставки)
+# РАЗНЫЕ СТАВКИ
 # =========================
 def make_prediction(bookmaker):
     markets = bookmaker['markets']
@@ -112,14 +118,16 @@ def make_prediction(bookmaker):
 
     # Тотал
     if bet_type == "total" and totals:
-        for t in totals:
-            if 1.7 <= t['price'] <= 2.2:
-                return f"{t['name']} {t.get('point', '')}", t['price'], round((1 / t['price']) * 100)
+        good = [t for t in totals if 1.7 <= t['price'] <= 2.2]
+
+        if good:
+            t = random.choice(good)
+            return f"{t['name']} {t.get('point', '')}", t['price'], round((1 / t['price']) * 100)
 
     return None, None, None
 
 # =========================
-# Сохранение статистики
+# СОХРАНЕНИЕ
 # =========================
 def save_stat(home, away, team, odds):
     df = pd.DataFrame([{
@@ -133,11 +141,11 @@ def save_stat(home, away, team, odds):
     df.to_csv("stats.csv", mode='a', header=False, index=False)
 
 # =========================
-# Отправка прогноза
+# ОТПРАВКА
 # =========================
 async def send_prediction():
-    if already_posted_today():
-        print("Сегодня уже был прогноз")
+    if get_today_count() >= 2:
+        print("Лимит 2 прогноза в день")
         return
 
     data = get_matches()
@@ -170,7 +178,7 @@ async def send_prediction():
         start_time = match_time[:16].replace("T", " ")
 
         text = f"""
-🔥 ПРОГНОЗ ДНЯ
+🔥 ПРОГНОЗ
 
 ⚽ Футбол
 
@@ -183,32 +191,30 @@ async def send_prediction():
 📊 Уверенность: {confidence}%
 """
 
-        for i in range(3):
-            try:
-                await bot.send_message(chat_id=CHANNEL, text=text)
-                break
-            except Exception as e:
-                print(f"Ошибка {i+1}: {e}")
-                await asyncio.sleep(2)
+        try:
+            await bot.send_message(chat_id=CHANNEL, text=text)
+        except Exception as e:
+            print("Ошибка:", e)
+            return
 
         save_stat(home, away, team, odds)
-        mark_posted()
+        increment_post_count()
 
         print("Прогноз отправлен")
 
         return
 
-    print("Подходящий матч не найден")
+    print("Матч не найден")
 
 # =========================
-# Запуск
+# ЗАПУСК
 # =========================
 def run_async():
     asyncio.run(send_prediction())
 
 schedule.every(10).minutes.do(run_async)
 
-print("БОТ РАБОТАЕТ 24/7 🚀")
+print("БОТ 2 ПРОГНОЗА В ДЕНЬ 🚀")
 
 while True:
     schedule.run_pending()
