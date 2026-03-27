@@ -6,15 +6,29 @@ from telegram import Bot
 from config import TOKEN, CHANNEL_ID, API_KEY
 from logic import analyze_match, is_safe_bet
 from stats import save_bet, calculate_roi
-from leagues import TOP_LEAGUES
 
 bot = Bot(token=TOKEN)
 
+# 📊 топ-лиги (встроили прямо сюда)
+TOP_LEAGUES = [
+    "Premier League",
+    "La Liga",
+    "Serie A",
+    "Bundesliga",
+    "Ligue 1",
+    "UEFA Champions League",
+    "UEFA Europa League"
+]
 
-# 📥 Получаем матчи
+
+# 📥 получаем матчи
 def get_matches():
     url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={API_KEY}&regions=eu&markets=h2h"
-    return requests.get(url).json()
+    try:
+        return requests.get(url).json()
+    except Exception as e:
+        print("Ошибка API:", e)
+        return []
 
 
 # 🧠 собираем лучшие ставки
@@ -24,8 +38,9 @@ def get_top_bets():
 
     for match in matches:
         try:
-            league = match['sport_title']
+            league = match.get('sport_title', '')
 
+            # фильтр топ-лиг
             if not any(top in league for top in TOP_LEAGUES):
                 continue
 
@@ -45,22 +60,23 @@ def get_top_bets():
                     all_bets.append(bet)
 
         except Exception as e:
-            print("Ошибка:", e)
+            print("Ошибка матча:", e)
             continue
 
+    # сортировка по value
     all_bets.sort(key=lambda x: x['value'], reverse=True)
 
     return all_bets[:3]
 
 
-# 📢 отправка
+# 📢 отправка прогноза
 async def send_prediction():
     print("Запуск прогноза...")
 
     bets = get_top_bets()
 
     if not bets:
-        print("Нет ставок")
+        print("Нет подходящих ставок")
         return
 
     text = "🔥 AI TOP PICKS\n\n"
@@ -92,14 +108,20 @@ async def send_prediction():
 ROI: {round(roi, 2)}%
 """
 
-    await bot.send_message(chat_id=CHANNEL_ID, text=text)
-
-    print("Отправлено!")
+    try:
+        await bot.send_message(chat_id=CHANNEL_ID, text=text)
+        print("Отправлено!")
+    except Exception as e:
+        print("Ошибка отправки:", e)
 
 
 # ⏰ планировщик
 def run_scheduler():
-    schedule.every().day.at("12:00").do(lambda: asyncio.run(send_prediction()))
+    # 🔥 тест при запуске (один раз)
+    asyncio.run(send_prediction())
+
+    # ежедневный пост
+    schedule.every().day.at("17:00").do(lambda: asyncio.run(send_prediction()))
 
     print("Бот запущен и ждёт расписание...")
 
