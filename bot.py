@@ -6,9 +6,29 @@ from datetime import datetime, timedelta, timezone
 import asyncio
 import os
 import random
-
 from telegram import Bot
-from config import TOKEN, CHANNEL, API_KEY
+
+# 🔥 Flask для Render
+from flask import Flask
+import threading
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running"
+
+def run_web():
+    app.run(host='0.0.0.0', port=10000)
+
+threading.Thread(target=run_web).start()
+
+# =========================
+# CONFIG
+# =========================
+TOKEN = os.getenv("TOKEN")
+CHANNEL = os.getenv("CHANNEL")
+API_KEY = os.getenv("API_KEY")
 
 bot = Bot(token=TOKEN)
 
@@ -186,7 +206,7 @@ def run_async():
 
 schedule.every(10).minutes.do(run_async)
 
-print("БОТ 24/7 ГОТОВ 🚀")
+print("БОТ РАБОТАЕТ 24/7 🚀")
 
 while True:
     schedule.run_pending()
